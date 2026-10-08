@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>999 | Juice WRLD Song Ranker</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0a11;--panel:#1a1723;--line:#363044;--accent:#b58aff;--muted:#b3aabc}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#fff;font:15px system-ui,Arial}
+header{background:linear-gradient(125deg,#3c175e,#14111c);padding:34px 18px;text-align:center}
+h1{font-size:clamp(30px,6vw,56px);margin:0}h1 span{color:#d5b9ff}header p{color:#d3c6e0}
+main{max-width:1050px;margin:auto;padding:18px}button,input,select{font:inherit}
+button{cursor:pointer;background:#30263d;color:white;border:1px solid #51415f;border-radius:9px;padding:9px 12px}
+button:hover{border-color:var(--accent)}button.active{background:#7143b4}
+input,select{background:#241e2e;border:1px solid #51415f;border-radius:9px;padding:10px;color:white}
+.controls{display:flex;flex-wrap:wrap;gap:9px;margin:16px 0}.controls input{flex:1;min-width:160px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:18px;margin:14px 0}
+.stats{display:flex;gap:10px}.stat{flex:1;text-align:center;padding:14px 4px;background:#21192c;border-radius:10px}
+.stat strong{display:block;font-size:26px;color:var(--accent)}.stat small,.muted{color:var(--muted)}
+.song,.toprow{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);padding:12px 2px}
+.song:last-child,.toprow:last-child{border:0}.name{flex:1;min-width:0;overflow-wrap:anywhere}
+.name strong{display:block}.name small{color:var(--muted)}.rank{width:38px;color:#f6c75c;font-weight:800}
+.rating{width:85px}.fav{color:#ffd479}.fav.chosen{background:#5b4523}
+.hidden{display:none}.empty{padding:30px;text-align:center;color:var(--muted)}
+.topactions{display:flex;gap:5px;flex-wrap:wrap}.topactions button{padding:7px 10px}
+#topSearch{width:100%}#topResults{max-height:230px;overflow:auto}
+#topResults button{display:block;width:100%;text-align:left;margin:5px 0}
+@media(max-width:600px){.song{flex-wrap:wrap}.song .name{flex-basis:calc(100% - 55px)}.song .rating{margin-left:48px}.toprow{flex-wrap:wrap}.topactions{margin-left:45px}}
+</style></head>
+<body><header><h1>JUICE <span>WRLD 999</span></h1><p>Song Ratings • Leaderboard • Your Personal Top 10</p></header>
+<main>
+<div class="stats"><div class="stat"><strong id="total"></strong><small>Songs</small></div><div class="stat"><strong id="rated"></strong><small>Rated</small></div><div class="stat"><strong id="favCount"></strong><small>Top 10 Picks</small></div></div>
+<nav class="controls"><button id="tabAll" class="active">All Songs</button><button id="tabRank">Rating Leaderboard</button><button id="tabTop">My Top 10</button></nav>
+<section id="browse"><div class="controls"><input id="search" placeholder="Search for a song"><select id="era"><option value="">All eras</option></select><select id="sort"><option value="az">Alphabetical A–Z</option><option value="high">Highest rated first</option><option value="low">Lowest rated first</option></select></div><div class="panel"><h2 id="heading">All Songs</h2><div id="list"></div><div class="controls"><button id="more">Load more songs</button></div></div></section>
+<section id="topPanel" class="panel hidden"><h2>🏆 My Ranked Top 10</h2><p class="muted">Search to add songs. Your #1 is your absolute favorite. Use ↑ and ↓ to change the order, or choose a specific position.</p><input id="topSearch" placeholder="Search songs to add to your Top 10"><div id="topResults"></div><h3>Your ranking</h3><div id="topList"></div><div class="controls"><button id="copy">Copy Top 10</button></div></section>
+<div class="panel"><h3>Save a backup</h3><p class="muted">Your ratings and Top 10 save automatically in this browser. Export a backup if you want to move computers.</p><div class="controls"><button id="export">Export backup</button><button id="importBtn">Restore backup</button><input type="file" id="backup" accept=".json" hidden></div></div>
+</main>
+<script>
+let SONGS=[];
+const SONG_FILE="./juicewrldlist.txt";
+function parseCatalog(text){
+ const songs=[],seen=new Set();
+ for(const line of text.replace(/\r/g,"").split("\n")){
+  const cells=line.split("\t");
+  if(cells.length<5)continue;
+  const era=(cells[0]||"").trim(),title=(cells[1]||"").trim();
+  if(!era||!title||era.length>35||title.length>140)continue;
+  if(!/Full|Snippet|CDQ|HQ|Throwaway|Demo|Feature|Lost|OG|Remix/i.test(cells.slice(3).join("\t")))continue;
+  const key=era+"::"+title;
+  if(seen.has(key))continue;
+  seen.add(key);songs.push({era,title});
+ }
+ return songs;
+}
+const KEY="juicewrld999_embedded_v1";
+let ids=[];
+const collator=new Intl.Collator(undefined,{numeric:true,sensitivity:"base"});
+let ratings={},top=[],tab="all",limit=100;
+try{let d=JSON.parse(localStorage.getItem(KEY)||"{}");ratings=d.ratings||{};top=Array.isArray(d.top)?d.top.filter(i=>Number.isInteger(i)&&i>=0&&i<SONGS.length).slice(0,10):[]}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify({ratings,top}))}catch(e){alert("Browser storage is unavailable. Export a backup to save your rankings.")}}
+const el=id=>document.getElementById(id);
+function node(tag,txt,cls){let n=document.createElement(tag);if(txt!==undefined)n.textContent=txt;if(cls)n.className=cls;return n}
+function btn(txt,fn,cls){let n=node("button",txt,cls);n.onclick=fn;return n}
+function updateStats(){el("total").textContent=SONGS.length;el("rated").textContent=Object.keys(ratings).filter(k=>ratings[k]>=1&&ratings[k]<=10).length;el("favCount").textContent=top.length+"/10"}
+function chooseTab(t){tab=t;limit=100;el("browse").classList.toggle("hidden",t==="top");el("topPanel").classList.toggle("hidden",t!=="top");for(let x of ["All","Rank","Top"])el("tab"+x).classList.toggle("active",x.toLowerCase()===t);if(t==="rank")el("sort").value="high";render()}
+function rate(i,v){if(v)ratings[i]=+v;else delete ratings[i];save();render()}
+function toggleTop(i){let at=top.indexOf(i);if(at>=0)top.splice(at,1);else if(top.length<10)top.push(i);else{alert("Top 10 is full. Remove a song first.");return}save();render()}
+function move(i,to){if(to<0||to>=top.length)return;let [song]=top.splice(i,1);top.splice(to,0,song);save();render()}
+function renderSongs(){
+let q=el("search").value.trim().toLowerCase(),era=el("era").value,sort=el("sort").value;
+let arr=ids.filter(i=>(!q||SONGS[i].title.toLowerCase().includes(q))&&(!era||SONGS[i].era===era)&&(tab!=="rank"||ratings[i]!=null));
+arr.sort((a,b)=>{let c=collator.compare(SONGS[a].title,SONGS[b].title);if(sort==="high"||tab==="rank")return (ratings[b]||0)-(ratings[a]||0)||c;if(sort==="low")return (ratings[a]||0)-(ratings[b]||0)||c;return c});
+el("heading").textContent=(tab==="rank"?"Rating Leaderboard":"All Songs")+" ("+arr.length+")";
+let list=el("list");list.replaceChildren();let frag=document.createDocumentFragment();
+for(let [j,i] of arr.slice(0,limit).entries()){
+let s=SONGS[i],row=node("div",undefined,"song"),rank=node("span","#"+(j+1),"rank"),name=node("div",undefined,"name");
+name.append(node("strong",s.title),node("small",s.era));
+let sel=node("select",undefined,"rating");sel.append(new Option("Unrated",""));for(let n=1;n<=10;n++)sel.append(new Option(n+"/10",String(n)));sel.value=ratings[i]||"";sel.onchange=()=>rate(i,sel.value);
+row.append(rank,name,sel,btn(top.includes(i)?"★ Top 10":"☆ Top 10",()=>toggleTop(i),"fav"+(top.includes(i)?" chosen":"")));frag.append(row)}
+list.append(frag);if(!arr.length)list.append(node("p","No matching songs.","empty"));el("more").hidden=arr.length<=limit}
+function renderTop(){
+let list=el("topList");list.replaceChildren();
+if(!top.length)list.append(node("p","No favorites yet. Search above or add songs from All Songs.","empty"));
+top.forEach((i,j)=>{let row=node("div",undefined,"toprow"),rank=node("span","#"+(j+1),"rank"),name=node("div",undefined,"name");
+name.append(node("strong",SONGS[i].title),node("small",SONGS[i].era));
+let actions=node("div",undefined,"topactions"),up=btn("↑",()=>move(j,j-1)),down=btn("↓",()=>move(j,j+1));up.disabled=j===0;down.disabled=j===top.length-1;
+let pos=node("select");for(let k=0;k<top.length;k++)pos.append(new Option("#"+(k+1),String(k)));pos.value=j;pos.onchange=()=>move(j,+pos.value);
+actions.append(up,down,pos,btn("Remove",()=>toggleTop(i)));row.append(rank,name,actions);list.append(row)});
+let results=el("topResults");results.replaceChildren();let q=el("topSearch").value.trim().toLowerCase();
+if(q){let matches=ids.filter(i=>SONGS[i].title.toLowerCase().includes(q)&&!top.includes(i)).sort((a,b)=>collator.compare(SONGS[a].title,SONGS[b].title)).slice(0,25);
+matches.forEach(i=>results.append(btn("+ "+SONGS[i].title+" — "+SONGS[i].era,()=>{toggleTop(i);el("topSearch").value="";renderTop()})));
+if(!matches.length)results.append(node("p","No matching songs available.","muted"))}
+}
+function render(){updateStats();if(tab==="top")renderTop();else renderSongs()}
+el("tabAll").onclick=()=>chooseTab("all");el("tabRank").onclick=()=>chooseTab("rank");el("tabTop").onclick=()=>chooseTab("top");
+el("search").oninput=()=>{limit=100;render()};el("era").onchange=()=>{limit=100;render()};el("sort").onchange=()=>{limit=100;render()};
+el("more").onclick=()=>{limit+=100;render()};el("topSearch").oninput=renderTop;
+el("copy").onclick=async()=>{let txt="MY TOP 10 JUICE WRLD SONGS\n\n"+top.map((i,j)=>(j+1)+". "+SONGS[i].title).join("\n")+"\n\n999 FOREVER";try{await navigator.clipboard.writeText(txt);alert("Top 10 copied!")}catch(e){prompt("Copy your ranking:",txt)}};
+el("export").onclick=()=>{let blob=new Blob([JSON.stringify({ratings,top},null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="juicewrld-rankings-backup.json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+el("importBtn").onclick=()=>el("backup").click();
+el("backup").onchange=async e=>{try{let d=JSON.parse(await e.target.files[0].text());if(!d||typeof d.ratings!=="object"||!Array.isArray(d.top))throw Error();ratings=d.ratings;top=d.top.filter(i=>Number.isInteger(i)&&i>=0&&i<SONGS.length).slice(0,10);save();render();alert("Backup restored")}catch(err){alert("Invalid backup file")}};
+async function start(){
+ try{
+  const response=await fetch(SONG_FILE,{cache:"no-cache"});
+  if(!response.ok)throw new Error("HTTP "+response.status);
+  SONGS=parseCatalog(await response.text());
+  if(!SONGS.length)throw new Error("No song rows found in TXT file");
+  ids=SONGS.map((s,i)=>i);
+  top=top.filter(i=>Number.isInteger(i)&&i>=0&&i<SONGS.length);
+  [...new Set(SONGS.map(s=>s.era))].sort(collator.compare).forEach(e=>el("era").append(new Option(e,e)));
+  render();
+ }catch(err){
+  el("heading").textContent="Could not load songs";
+  el("list").textContent="Check that juicewrldlist.txt is in the same GitHub repository folder as index.html. GitHub Pages must be enabled. Details: "+err.message;
+  el("more").hidden=true;
+ }
+}
+start();
+</script></body></html>
